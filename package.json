@@ -1,0 +1,18 @@
+{
+  "name": "bot-jual-nomor",
+  "version": "1.0.0",
+  "description": "Bot Store Telegram dengan Integrasi GitHub",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "telegraf": "^4.12.2",
+    "axios": "^1.4.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "author": "Gemini AI",
+  "license": "ISC"
+}
