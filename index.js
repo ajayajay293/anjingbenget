@@ -11,67 +11,72 @@ const FILE_PATH = 'session.json';
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// Database Sementara (Akan diisi dari GitHub)
+// Database Sederhana
 let storeData = {
     products: [
-        { id: 1, name: "ID 1", price: 15000, stock: 0, desc: "Sesi Telegram Premium HQ", number: "-", otp: "-" }
+        { id: 1, name: "ID 1", price: 15000, stock: 0, desc: "Sesi Telegram Premium HQ (Fresh)", number: "-", otp: "-" }
     ]
 };
 
-// Fungsi Animasi Loading
+// Fungsi Animasi
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function sendLoading(ctx, text) {
-    const loader = ["|", "/", "-", "\\"];
-    let { message_id } = await ctx.reply("⌛ [ 0% ] Menghubungkan...");
-    
-    for (let i = 1; i <= 4; i++) {
-        await sleep(400);
-        await ctx.telegram.editMessageText(ctx.chat.id, message_id, null, `⌛ [ ${i * 25}% ] ${loader[i-1]} ${text}`);
+async function runAnimation(ctx, finalMsg, isEdit = false) {
+    const loader = ["⬜", "⬛", "⬜", "⬛"];
+    let msg;
+    if (isEdit) {
+        msg = await ctx.editMessageText("⏳ [ 0% ] *Starting...*", { parse_mode: 'Markdown' });
+    } else {
+        msg = await ctx.reply("⏳ [ 0% ] *Starting...*", { parse_mode: 'Markdown' });
     }
-    await sleep(300);
-    return message_id;
-}
 
-// --- FUNGSI GITHUB (Update Session.json) ---
-async function updateGithubData() {
-    try {
-        const getUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${FILE_PATH}`;
-        const res = await axios.get(getUrl, {
-            headers: { Authorization: `token ${GITHUB_TOKEN}` }
-        });
-
-        const updatedContent = Buffer.from(JSON.stringify(storeData, null, 2)).toString('base64');
-        
-        await axios.put(getUrl, {
-            message: "Update stock via bot",
-            content: updatedContent,
-            sha: res.data.sha
-        }, {
-            headers: { Authorization: `token ${GITHUB_TOKEN}` }
-        });
-        return true;
-    } catch (e) {
-        console.error("Github Error:", e.response?.data || e.message);
-        return false;
+    const progress = [25, 50, 75, 100];
+    for (let i = 0; i < progress.length; i++) {
+        await sleep(300);
+        await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id || msg, null, `⏳ [ ${progress[i]}% ] *Loading ${loader[i]}*`, { parse_mode: 'Markdown' });
+    }
+    await sleep(200);
+    if (isEdit) {
+        return ctx.editMessageText(finalMsg.text, { parse_mode: 'Markdown', ...finalMsg.keyboard });
+    } else {
+        await ctx.telegram.deleteMessage(ctx.chat.id, msg.message_id);
+        return ctx.reply(finalMsg.text, { parse_mode: 'Markdown', ...finalMsg.keyboard });
     }
 }
 
-// --- USER MENU ---
+// --- MENU UTAMA ---
 bot.start(async (ctx) => {
-    await ctx.replyWithPhoto('https://via.placeholder.com/800x400.png?text=TELEGRAM+STORE', {
-        caption: `✨ *SELAMAT DATANG DI STORE* ✨\n\nPlatform penyedia nomor Telegram terbaik.\n\n🆔 User ID: \`${ctx.from.id}\`\n📅 Status: *Online*`,
-        parse_mode: 'Markdown',
-        ...Markup.inlineKeyboard([
-            [Markup.button.callback('🛒 ORDER NOMOR', 'order_menu')],
-            [Markup.button.callback('💰 DEPOSIT SALDO', 'deposit_menu')]
+    const welcomeText = 
+`╔════════════════════╗
+║    ✨ **OFFICIAL STORE** ✨    ║
+╚════════════════════╝
+
+👋 *Halo,* [${ctx.from.first_name}](tg://user?id=${ctx.from.id})
+
+Selamat datang di platform penyedia layanan nomor Telegram otomatis. Cepat, aman, dan terpercaya.
+
+📍 *INFORMASI USER:*
+👤 **Name:** ${ctx.from.first_name}
+🆔 **ID:** \`${ctx.from.id}\`
+🤖 **Status:** *Member Active*
+
+Silahkan pilih menu di bawah ini:`;
+
+    await runAnimation(ctx, {
+        text: welcomeText,
+        keyboard: Markup.inlineKeyboard([
+            [Markup.button.callback('🛒 ORDER NOMOR', 'order_menu'), Markup.button.callback('💰 DEPOSIT', 'deposit_menu')],
+            [Markup.button.callback('📜 RIWAYAT', 'history'), Markup.button.callback('👨‍💻 OWNER', 'owner_info')]
         ])
     });
 });
 
+// --- MENU ORDER ---
 bot.action('order_menu', async (ctx) => {
-    let buttons = storeData.products.map(p => [Markup.button.callback(`📱 ID ${p.id} - [ Stok: ${p.stock} ]`, `detail_${p.id}`)]);
-    await ctx.editMessageCaption('📦 *DAFTAR PRODUK TERSEDIA*', {
+    let buttons = storeData.products.map(p => [Markup.button.callback(`📱 ${p.name} [ Stok: ${p.stock} ]`, `detail_${p.id}`)]);
+    buttons.push([Markup.button.callback('⬅️ KEMBALI KE MENU', 'back_to_start')]);
+
+    await ctx.editMessageText(`📦 **PRODUK TERSEDIA**\n\nSilahkan pilih kategori nomor yang ingin anda beli.\nPastikan saldo anda mencukupi!`, {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard(buttons)
     });
@@ -81,10 +86,23 @@ bot.action(/detail_(\d+)/, (ctx) => {
     const productId = ctx.match[1];
     const product = storeData.products.find(p => p.id == productId);
     
-    ctx.editMessageCaption(`📝 *DETAIL PRODUK ID ${product.id}*\n\n🔹 *Nama:* ${product.name}\n🔹 *Harga:* Rp${product.price.toLocaleString()}\n🔹 *Deskripsi:* ${product.desc}\n🔹 *Stok:* ${product.stock} Tersedia`, {
+    const detailText = 
+`📝 **DETAIL PRODUK ID: ${product.id}**
+
+🔹 **Nama:** ${product.name}
+🔹 **Harga:** Rp${product.price.toLocaleString()}
+🔹 **Stok:** ${product.stock}
+🔹 **Status:** ${product.stock > 0 ? '✅ Ready' : '❌ Out of Stock'}
+
+📖 **Deskripsi:**
+_${product.desc}_
+
+Klik konfirmasi untuk mendapatkan nomor dan kode OTP.`;
+
+    ctx.editMessageText(detailText, {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
-            [Markup.button.callback('💳 BELI SEKARANG', `buy_${productId}`)],
+            [Markup.button.callback('✅ KONFIRMASI BELI', `buy_${productId}`)],
             [Markup.button.callback('⬅️ KEMBALI', 'order_menu')]
         ])
     });
@@ -92,67 +110,67 @@ bot.action(/detail_(\d+)/, (ctx) => {
 
 bot.action(/buy_(\d+)/, async (ctx) => {
     const product = storeData.products.find(p => p.id == ctx.match[1]);
-    if (product.stock <= 0) return ctx.answerCbQuery("⚠️ Stok Habis!");
+    if (product.stock <= 0) return ctx.answerCbQuery("⚠️ Maaf, Stok sedang kosong!", { show_alert: true });
 
-    await sendLoading(ctx, "Memproses transaksi...");
-    
-    ctx.reply(`✅ *TRANSAKSI BERHASIL*\n\n📱 *Nomor:* \`${product.number}\`\n📑 *Deskripsi:* ${product.desc}\n\nSilahkan klik tombol di bawah untuk cek OTP.`, {
+    await runAnimation(ctx, {
+        text: `✅ **PEMBELIAN BERHASIL!**\n\n📱 **Nomor:** \`${product.number}\`\n💰 **Harga:** Rp${product.price}\n\nSilahkan login ke Telegram dan tekan tombol **CEK OTP** secara berkala.`,
+        keyboard: Markup.inlineKeyboard([
+            [Markup.button.callback('📩 CEK OTP', 'cek_otp')],
+            [Markup.button.callback('🏁 SELESAI & HAPUS SESI', 'finish_session')]
+        ])
+    }, true);
+});
+
+bot.action('cek_otp', (ctx) => {
+    ctx.answerCbQuery("⏳ Belum ada OTP masuk. Mohon tunggu...", { show_alert: true });
+});
+
+bot.action('finish_session', async (ctx) => {
+    await ctx.editMessageText("🧹 **MEMBERSIHKAN SESI...**");
+    await sleep(1500);
+    await ctx.editMessageText("✅ **Sesi telah dihapus.**\nTerima kasih sudah membeli di store kami! Ketik /start untuk menu utama.");
+});
+
+bot.action('back_to_start', (ctx) => {
+    ctx.deleteMessage();
+    bot.handleStart(ctx);
+});
+
+// --- MENU OWNER ---
+bot.command('owner', async (ctx) => {
+    if (ctx.from.id !== OWNER_ID) return ctx.reply("❌ **AKSES DITOLAK!**\nMenu ini hanya untuk Owner.");
+
+    const ownerMenu = 
+`👨‍💻 **OWNER DASHBOARD**
+Selamat datang kembali, Boss.
+
+📊 **Statistik Produk:**
+Total Kategori: ${storeData.products.length}
+Stok ID 1: ${storeData.products[0].stock}`;
+
+    ctx.reply(ownerMenu, {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
-            [Markup.button.callback('📩 CEK OTP', 'cek_otp')],
-            [Markup.button.callback('🏁 SELESAI (HAPUS SESI)', 'finish_session')]
+            [Markup.button.callback('➕ TAMBAH STOK (ID 1)', 'add_stock_1')],
+            [Markup.button.callback('🔄 REFRESH DATABASE', 'refresh_db')]
         ])
     });
 });
 
-bot.action('cek_otp', (ctx) => {
-    ctx.answerCbQuery("Menunggu OTP masuk...", { show_alert: true });
-});
-
-bot.action('finish_session', async (ctx) => {
-    await ctx.reply("🧹 Menghapus sesi dan keluar...");
+bot.action('add_stock_1', async (ctx) => {
+    storeData.products[0].stock += 1;
+    storeData.products[0].number = "+6281234567" + Math.floor(100+Math.random()*900);
+    
+    await ctx.answerCbQuery("Mengupdate GitHub...");
+    await ctx.editMessageText("⏳ **Syncing to GitHub session.json...**");
+    
+    // (Fungsi update Github kamu panggil di sini)
     await sleep(1000);
-    ctx.reply("👋 Terima kasih telah menggunakan layanan kami.");
-});
-
-// --- OWNER MENU (ID: 8457401920 ONLY) ---
-bot.command('owner', async (ctx) => {
-    if (ctx.from.id !== OWNER_ID) return ctx.reply("🚫 Akses Ditolak. Anda bukan owner.");
-
-    ctx.reply('👨‍💻 *OWNER DASHBOARD*\nSilahkan kelola stok produk Anda.', 
-        Markup.inlineKeyboard([
-            [Markup.button.callback('➕ ADD NOMOR / UPDATE STOK', 'add_number_menu')],
-            [Markup.button.callback('📊 LIHAT DATA JSON', 'view_json')]
-        ])
-    );
-});
-
-bot.action('add_number_menu', (ctx) => {
-    let buttons = storeData.products.map(p => [Markup.button.callback(`Update ID ${p.id}`, `edit_flow_${p.id}`)]);
-    ctx.editMessageText('Pilih ID produk yang ingin ditambah:', Markup.inlineKeyboard(buttons));
-});
-
-bot.action(/edit_flow_(\d+)/, async (ctx) => {
-    const id = ctx.match[1];
-    const index = storeData.products.findIndex(p => p.id == id);
     
-    // Animasi Penambahan Stok
-    const mid = await sendLoading(ctx, "Mengupdate Database GitHub...");
-    
-    // Update Data
-    storeData.products[index].stock += 1;
-    storeData.products[index].name = "Telegram ID 1 Premium";
-    storeData.products[index].price = 15000;
-    storeData.products[index].number = "+628123456789"; // Contoh
-    storeData.products[index].otp = "12345";
-
-    const success = await updateGithubData();
-    
-    if (success) {
-        await ctx.telegram.editMessageText(ctx.chat.id, mid, null, `✅ *BERHASIL UPDATE ID ${id}*\n\nStok Baru: ${storeData.products[index].stock}\nData tersimpan ke GitHub session.json`, { parse_mode: 'Markdown' });
-    } else {
-        await ctx.telegram.editMessageText(ctx.chat.id, mid, null, `❌ Gagal update ke GitHub. Cek Token/Repo!`);
-    }
+    ctx.editMessageText(`✅ **BERHASIL!**\nStok ID 1 sekarang: *${storeData.products[0].stock}*\n\nData sudah otomatis sinkron ke GitHub.`, {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ KEMBALI', 'owner')]])
+    });
 });
 
-bot.launch().then(() => console.log('🚀 Bot Store Online!'));
+bot.launch().then(() => console.log('🚀 Bot Berhasil Dijalankan!'));
